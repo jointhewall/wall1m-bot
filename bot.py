@@ -1,5 +1,6 @@
 import logging
 import os
+import asyncio
 from telegram import Update, LabeledPrice
 from telegram.ext import Application, CommandHandler, MessageHandler, PreCheckoutQueryHandler, filters, ContextTypes
 
@@ -57,11 +58,20 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏆 Leaderboard\n\nTotal names: {len(names)}\n\nInvite friends to earn points!"
     )
 
-if __name__ == "__main__":
+async def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name))
-    app.run_polling(drop_pending_updates=True, close_loop=False)
+    
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling(drop_pending_updates=True)
+    
+    # Keep running
+    await asyncio.Event().wait()
+
+if __name__ == "__main__":
+    asyncio.run(main())
