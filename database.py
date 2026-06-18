@@ -83,3 +83,12 @@ async def crown_new_king(telegram_user_id: int, points_to_add: int = 50):
             )
         finally:
             await conn.close()
+
+async def get_total_participants_count():
+    """Retrieves the total number of registered rows inside the names table."""
+    conn = await get_db_connection()
+    try:
+        count = await conn.fetchval("SELECT COUNT(*) FROM names")
+        return count if count else 0
+    finally:
+        await conn.close()
