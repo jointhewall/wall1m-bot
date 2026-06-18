@@ -52,6 +52,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the user registration process sequentially and processes referral codes."""
     context.user_data.clear()
     user_id = update.effective_user.id
+    logger.info(f"--- START COMMAND TRIGGERED BY USER {user_id} ---")
     
     # Extract referral payload from command arguments
     args = context.args
@@ -59,9 +60,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         referrer_id = int(args[0])
         if referrer_id != user_id:
             context.user_data["invited_by"] = referrer_id
+            logger.info(f"Referrer detected: {referrer_id}")
 
-    # Check if the user profile already exists in Supabase
-    existing_user = await database.get_user_by_id(user_id)
+    try:
+        logger.info("Attempting to connect to Supabase database via database.py...")
+        existing_user = await database.get_user_by_id(user_id)
+        logger.info(f"Database response for user check: {existing_user}")
+    except Exception as db_err:
+        logger.error(f"CRITICAL DATABASE CONNECTION ERROR: {db_err}", exc_info=True)
+        await update.message.reply_text("⚠️ Database connection failed. Please check host environment variables.")
+        return
     
     if existing_user:
         await update.message.reply_text(
