@@ -171,19 +171,18 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
         ref_link = f"https://t.me/wall1mnames_bot?start={user_id}"
         
-        try:
-            card = create_card(name, placement_id, message)
-            await update.message.reply_photo(
-                photo=card,
-                caption=(
-                    f"🎉 *You are on the Wall!*\n\n"
-                    f"✅ Name: *{name}*\n"
-                    f"🔢 Number: *#{placement_id:,}*\n\n"
-                    f"🏆 Share your referral link to earn +50 points:\n{ref_link}"
-                ),
-                parse_mode="Markdown"
-            )
-        except Exception as e:
+      try:
+    card = create_card(name, placement_id, message)
+    await update.message.reply_photo(
+        photo=card,
+        caption=(
+            f"🎉 You are on the Wall!\n\n"
+            f"✅ Name: {name}\n"
+            f"🔢 Number: #{placement_id:,}\n\n"
+            f"🏆 Share your referral link to earn +50 points:\n{ref_link}"
+        )
+    )
+except Exception as e:
             logger.error(f"Card asset compilation failure scenario: {e}")
             await update.message.reply_text(
                 f"🎉 You are on the Wall!\n\n"
