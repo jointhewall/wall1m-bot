@@ -71,7 +71,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Database connection failed. Please check host environment variables.")
         return
     
-    if existing_user:
+    if False:  # ВРЕМЕННЫЙ КОСТЫЛЬ ДЛЯ ТЕСТА РЕГИСТРАЦИИ
         await update.message.reply_text(
             f"👋 Welcome back, *{existing_user['name']}*!\n\n"
             f"📊 Your Stats:\n"
