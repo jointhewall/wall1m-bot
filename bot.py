@@ -2,7 +2,7 @@ import logging
 import os
 import asyncio
 from io import BytesIO
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from telegram import Update, LabeledPrice
 from telegram.ext import Application, CommandHandler, MessageHandler, PreCheckoutQueryHandler, filters, ContextTypes
 
@@ -14,34 +14,66 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+def _load_font(size):
+    """Loads a TrueType font that supports Cyrillic characters.
+    Falls back through common Linux font paths, then to PIL's default bitmap font."""
+    candidate_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/nix/store/*/share/fonts/truetype/DejaVuSans.ttf",
+    ]
+    import glob
+    for path in candidate_paths:
+        if "*" in path:
+            matches = glob.glob(path)
+            if matches:
+                try:
+                    return ImageFont.truetype(matches[0], size)
+                except Exception:
+                    continue
+        elif os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                continue
+    logger.warning("No TrueType font with Cyrillic support found, falling back to default bitmap font")
+    return ImageFont.load_default()
+
 def create_card(name, number, message=""):
     """Generates a high-density digital artifact certificate without horizontal lines."""
     W, H = 800, 500
     img = Image.new("RGB", (W, H), color="#0a0a0a")
     draw = ImageDraw.Draw(img)
 
+    font_title = _load_font(22)
+    font_name = _load_font(38)
+    font_number = _load_font(28)
+    font_message = _load_font(20)
+    font_footer = _load_font(16)
+
     # Frame blocks
     draw.rectangle([20, 20, W-20, H-20], outline="#c8f135", width=2)
     draw.rectangle([28, 28, W-28, H-28], outline="#c8f135", width=1)
 
     # Header title
-    draw.text((W//2, 80), "WALL OF MILLION NAMES", fill="#c8f135", anchor="mm")
+    draw.text((W//2, 80), "WALL OF MILLION NAMES", fill="#c8f135", anchor="mm", font=font_title)
 
     # Name content text
-    draw.text((W//2, 200), name, fill="#ffffff", anchor="mm")
+    draw.text((W//2, 200), name, fill="#ffffff", anchor="mm", font=font_name)
 
     # Unique global registry sequence number
-    draw.text((W//2, 270), f"#{number:,}", fill="#c8f135", anchor="mm")
+    draw.text((W//2, 270), f"#{number:,}", fill="#c8f135", anchor="mm", font=font_number)
 
     # User personalized message string
     if message:
-        draw.text((W//2, 340), f'"{message}"', fill="#aaaaaa", anchor="mm")
+        draw.text((W//2, 340), f'"{message}"', fill="#aaaaaa", anchor="mm", font=font_message)
 
     # Footer timestamp details
     from datetime import datetime
     date_str = datetime.now().strftime("%d %B %Y")
-    draw.text((W//2, 420), date_str, fill="#666666", anchor="mm")
-    draw.text((W//2, 455), "wall1m.com", fill="#c8f135", anchor="mm")
+    draw.text((W//2, 420), date_str, fill="#666666", anchor="mm", font=font_footer)
+    draw.text((W//2, 455), "wall1m.com", fill="#c8f135", anchor="mm", font=font_footer)
 
     buf = BytesIO()
     img.save(buf, format="PNG")
