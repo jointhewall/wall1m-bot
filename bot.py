@@ -53,7 +53,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     user_id = update.effective_user.id
     logger.info(f"--- START COMMAND TRIGGERED BY USER {user_id} ---")
-    
+
     # Extract referral payload from command arguments
     args = context.args
     if args and args[0].isdigit():
@@ -70,19 +70,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"CRITICAL DATABASE CONNECTION ERROR: {db_err}", exc_info=True)
         await update.message.reply_text("⚠️ Database connection failed. Please check host environment variables.")
         return
-    
+
     if False:  # ВРЕМЕННЫЙ КОСТЫЛЬ ДЛЯ ТЕСТА РЕГИСТРАЦИИ
         await update.message.reply_text(
-            f"👋 Welcome back, *{existing_user['name']}*!\n\n"
+            f"👋 Welcome back, {existing_user['name']}!\n\n"
             f"📊 Your Stats:\n"
-            f"🏆 Points: *{existing_user['points']}*\n"
-            f"⭐ Avatar Level: *{existing_user['level']}*\n"
-            f"👑 King Status: *{'Active' if existing_user['is_vip'] else 'Inactive'}*\n\n"
+            f"🏆 Points: {existing_user['points']}\n"
+            f"⭐ Avatar Level: {existing_user['level']}\n"
+            f"👑 King Status: {'Active' if existing_user['is_vip'] else 'Inactive'}\n\n"
             f"🔄 Want to upgrade your digital asset profile? Choose your option:\n"
             f"1️⃣ Upgrade Avatar Level (+30 points)\n"
             f"2️⃣ Claim 'King of the Hill' crown (+50 points)\n\n"
-            f"📥 Select your action below.",
-            parse_mode="Markdown"
+            f"📥 Select your action below."
         )
         return
 
@@ -104,7 +103,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = text if text.lower() != "skip" else ""
         name = context.user_data.get("name", "")
         invited_by = context.user_data.get("invited_by")
-        
+
         context.user_data["message"] = message
         context.user_data["waiting_message"] = False
 
@@ -118,7 +117,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description=f"Add '{name}' to the Wall forever",
             payload=payload,
             currency="XTR",
-            prices=[LabeledPrice("One spot on the Wall", 1)],
+            prices=[LabeledPrice("One spot on the Wall", 1)],  # ВРЕМЕННО 1 для теста, вернуть на 150!
             provider_token="",
         )
         return
@@ -132,10 +131,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["waiting_message"] = True
 
     await update.message.reply_text(
-        f"✅ Name saved: *{text}*\n\n"
+        f"✅ Name saved: {text}\n\n"
         f"Step 2: Add a message to the Wall? (optional)\n"
-        f"Write your message or type *skip*",
-        parse_mode="Markdown"
+        f"Write your message or type skip"
     )
 
 async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -147,15 +145,15 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     payload = update.message.successful_payment.invoice_payload
     parts = payload.split(":")
     user_id = update.effective_user.id
-    
+
     # Process base profile registration placement action execution sequence
     if parts[0] == "buy_slot":
         name = parts[3]
         message = parts[5]
         invited_by = int(parts[7]) if len(parts) > 6 else None
-        
+
         avatar_url = f"https://api.dicebear.com/7.x/bottts/png?seed={user_id}"
-        
+
         # Insert entry into database registry reference
         placement_id = await database.create_new_participant(
             telegram_user_id=user_id,
@@ -164,26 +162,29 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
             avatar_url=avatar_url,
             invited_by=invited_by
         )
-        
+
         # Apply rewards to the upstream system referrer user
         if invited_by:
             await database.add_points_to_user(telegram_user_id=invited_by, points_to_add=50)
-            
+
         ref_link = f"https://t.me/wall1mnames_bot?start={user_id}"
-        
-      try:
-    card = create_card(name, placement_id, message)
-    await update.message.reply_photo(
-        photo=card,
-        caption=(
-            f"🎉 You are on the Wall!\n\n"
-            f"✅ Name: {name}\n"
-            f"🔢 Number: #{placement_id:,}\n\n"
-            f"🏆 Share your referral link to earn +50 points:\n{ref_link}"
-        )
-    )
-except Exception as e:
-            logger.error(f"Card asset compilation failure scenario: {e}")
+
+        # ВАЖНО: никакого parse_mode и звёздочек вокруг текста с пользовательскими данными —
+        # имя или сообщение пользователя может содержать символы *, _, [, ], которые ломают
+        # Markdown-парсер Telegram и вызывают ошибку "can't find end of the entity"
+        try:
+            card = create_card(name, placement_id, message)
+            await update.message.reply_photo(
+                photo=card,
+                caption=(
+                    f"🎉 You are on the Wall!\n\n"
+                    f"✅ Name: {name}\n"
+                    f"🔢 Number: #{placement_id:,}\n\n"
+                    f"🏆 Share your referral link to earn +50 points:\n{ref_link}"
+                )
+            )
+        except Exception as e:
+            logger.error(f"Card asset compilation failure scenario: {e}", exc_info=True)
             await update.message.reply_text(
                 f"🎉 You are on the Wall!\n\n"
                 f"✅ Name: {name}\n"
@@ -195,15 +196,14 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays total stats from the database."""
     total_count = await database.get_total_participants_count()
     await update.message.reply_text(
-        f"🏆 *Leaderboard & Stats*\n\n"
-        f"🌍 Total active names on the wall: *{total_count:,}*\n\n"
-        f"Invite friends using your link to accumulate points and reach the top 10 positions!",
-        parse_mode="Markdown"
+        f"🏆 Leaderboard & Stats\n\n"
+        f"🌍 Total active names on the wall: {total_count:,}\n\n"
+        f"Invite friends using your link to accumulate points and reach the top 10 positions!"
     )
 
 async def main():
     app = Application.builder().token(BOT_TOKEN).build()
-    
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
