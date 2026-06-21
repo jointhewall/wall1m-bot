@@ -118,7 +118,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description=f"Add '{name}' to the Wall forever",
             payload=payload,
             currency="XTR",
-            prices=[LabeledPrice("One spot on the Wall", 150)],
+            prices=[LabeledPrice("One spot on the Wall", 1)],
             provider_token="",
         )
         return
