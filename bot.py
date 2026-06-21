@@ -110,17 +110,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Database connection failed. Please check host environment variables.")
         return
 
-    if False:  # ВРЕМЕННЫЙ КОСТЫЛЬ ДЛЯ ТЕСТА РЕГИСТРАЦИИ
+    if existing_user:
+        # Daily check-in: +1 point, once per calendar day
+        checked_in = await database.try_daily_checkin(user_id)
+        checkin_line = "🎁 Daily check-in: +1 point!\n\n" if checked_in else ""
+
         await update.message.reply_text(
             f"👋 Welcome back, {existing_user['name']}!\n\n"
+            f"{checkin_line}"
             f"📊 Your Stats:\n"
             f"🏆 Points: {existing_user['points']}\n"
             f"⭐ Avatar Level: {existing_user['level']}\n"
+            f"👥 Friends invited: {existing_user['referral_count']}\n"
             f"👑 King Status: {'Active' if existing_user['is_vip'] else 'Inactive'}\n\n"
-            f"🔄 Want to upgrade your digital asset profile? Choose your option:\n"
-            f"1️⃣ Upgrade Avatar Level (+30 points)\n"
-            f"2️⃣ Claim 'King of the Hill' crown (+50 points)\n\n"
-            f"📥 Select your action below."
+            f"🔄 Want to upgrade your profile?\n"
+            f"/levelup — Upgrade Avatar Level (150 ⭐, +points)\n"
+            f"/king — Claim 'King of the Hill' crown (150 ⭐, +50 points)\n"
+            f"/leaderboard — See the Top 10"
         )
         return
 
@@ -156,7 +162,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description=f"Add '{name}' to the Wall forever",
             payload=payload,
             currency="XTR",
-            prices=[LabeledPrice("One spot on the Wall", 1)],  # ВРЕМЕННО 1 для теста, вернуть на 150!
+            prices=[LabeledPrice("One spot on the Wall", 150)],
             provider_token="",
         )
         return
@@ -175,6 +181,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Write your message or type skip"
     )
 
+async def levelup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends an invoice for a repeat 'Level Up' purchase (150 Stars)."""
+    user_id = update.effective_user.id
+    existing_user = await database.get_user_by_id(user_id)
+    if not existing_user:
+        await update.message.reply_text("You need to add your name to the Wall first! Type /start to begin.")
+        return
+
+    await update.message.reply_invoice(
+        title="Level Up Your Avatar",
+        description="Upgrade your avatar level and earn bonus points",
+        payload=f"levelup:{user_id}",
+        currency="XTR",
+        prices=[LabeledPrice("Avatar Level Up", 150)],
+        provider_token="",
+    )
+
+
+async def king_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends an invoice for claiming the 'King of the Hill' crown (150 Stars)."""
+    user_id = update.effective_user.id
+    existing_user = await database.get_user_by_id(user_id)
+    if not existing_user:
+        await update.message.reply_text("You need to add your name to the Wall first! Type /start to begin.")
+        return
+
+    current_king = await database.get_current_king()
+    king_note = f"\n\n👑 Current King: {current_king['name']}" if current_king else "\n\n👑 The throne is empty!"
+
+    await update.message.reply_invoice(
+        title="King of the Hill",
+        description=f"Claim the crown and become the new King!{king_note}",
+        payload=f"king:{user_id}",
+        currency="XTR",
+        prices=[LabeledPrice("King of the Hill Crown", 150)],
+        provider_token="",
+    )
+
+
 async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Validates and acknowledges the Telegram Stars pre-checkout query transaction."""
     await update.pre_checkout_query.answer(ok=True)
@@ -185,7 +230,30 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     parts = payload.split(":")
     user_id = update.effective_user.id
 
-    # Process base profile registration placement action execution sequence
+    # ── Level Up purchase: repeat buy, grows in value (LTV mechanic) ──────────
+    if parts[0] == "levelup":
+        result = await database.upgrade_user_level(telegram_user_id=user_id)
+        await update.message.reply_text(
+            f"⭐ Avatar Level Up!\n\n"
+            f"📈 New Level: {result['level']}\n"
+            f"🏆 Points earned: +{result['points_awarded']}\n\n"
+            f"Next upgrade will be worth even more — keep climbing!"
+        )
+        return
+
+    # ── King of the Hill purchase: dethrone + crown + VIP status ───────────────
+    if parts[0] == "king":
+        previous_king = await database.get_current_king()
+        await database.crown_new_king(telegram_user_id=user_id, points_to_add=50)
+        dethrone_note = f"\n\n👋 {previous_king['name']} has been dethroned." if previous_king else ""
+        await update.message.reply_text(
+            f"👑 You are the new King of the Hill!\n\n"
+            f"🏆 Points earned: +50\n"
+            f"✨ VIP status is now active on your profile.{dethrone_note}"
+        )
+        return
+
+    # ── Standard slot purchase: register a new name on the Wall ────────────────
     if parts[0] == "buy_slot":
         name = parts[3]
         message = parts[5]
@@ -202,11 +270,29 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
             invited_by=invited_by
         )
 
-        # Apply rewards to the upstream system referrer user
-        if invited_by:
-            await database.add_points_to_user(telegram_user_id=invited_by, points_to_add=50)
-
         ref_link = f"https://t.me/wall1mnames_bot?start={user_id}"
+
+        # Apply rewards to the upstream system referrer user (+50 per referral,
+        # plus a one-time +500 milestone bonus at 10 referrals)
+        if invited_by:
+            referral_result = await database.register_referral(
+                telegram_user_id=invited_by,
+                referral_points=50,
+                milestone_bonus=500,
+                milestone_count=10
+            )
+            if referral_result["milestone_hit"]:
+                try:
+                    await context.bot.send_message(
+                        chat_id=invited_by,
+                        text=(
+                            f"🎉 Milestone reached!\n\n"
+                            f"You've invited 10 friends to the Wall!\n"
+                            f"🏆 Bonus: +500 points awarded!"
+                        )
+                    )
+                except Exception as notify_err:
+                    logger.warning(f"Could not notify referrer {invited_by} about milestone: {notify_err}")
 
         # ВАЖНО: никакого parse_mode и звёздочек вокруг текста с пользовательскими данными —
         # имя или сообщение пользователя может содержать символы *, _, [, ], которые ломают
@@ -219,7 +305,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     f"🎉 You are on the Wall!\n\n"
                     f"✅ Name: {name}\n"
                     f"🔢 Number: #{placement_id:,}\n\n"
-                    f"🏆 Share your referral link to earn +50 points:\n{ref_link}"
+                    f"🏆 Share your referral link to earn +50 points (and +500 at 10 friends!):\n{ref_link}"
                 )
             )
         except Exception as e:
@@ -232,19 +318,31 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Displays total stats from the database."""
+    """Displays the real Top-10 leaderboard and total stats from the database."""
     total_count = await database.get_total_participants_count()
-    await update.message.reply_text(
-        f"🏆 Leaderboard & Stats\n\n"
-        f"🌍 Total active names on the wall: {total_count:,}\n\n"
-        f"Invite friends using your link to accumulate points and reach the top 10 positions!"
-    )
+    top10 = await database.get_top_leaderboard(limit=10)
+
+    text = f"🏆 Leaderboard & Stats\n\n🌍 Total names on the wall: {total_count:,}\n\n"
+
+    if top10:
+        medals = ["👑", "🥈", "🥉"]
+        for i, row in enumerate(top10):
+            medal = medals[i] if i < 3 else f"{i + 1}."
+            vip_tag = " 👑VIP" if row["is_vip"] else ""
+            text += f"{medal} {row['name']} — {row['points']} pts (Lvl {row['level']}){vip_tag}\n"
+    else:
+        text += "No one on the wall yet — be the first!"
+
+    text += "\n\nInvite friends using your link to climb the ranks!"
+    await update.message.reply_text(text)
 
 async def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("levelup", levelup_command))
+    app.add_handler(CommandHandler("king", king_command))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
