@@ -16,27 +16,34 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 def _load_font(size):
     """Loads a TrueType font that supports Cyrillic characters.
-    Falls back through common Linux font paths, then to PIL's default bitmap font."""
-    candidate_paths = [
+    Primary source: the DejaVuSans.ttf bundled inside the matplotlib package —
+    this is guaranteed to exist after `pip install matplotlib`, regardless of
+    the host OS or its system font configuration.
+    Falls back to common Linux system font paths, then to PIL's default bitmap font."""
+    candidate_paths = []
+
+    try:
+        import matplotlib
+        mpl_font = os.path.join(
+            os.path.dirname(matplotlib.__file__),
+            "mpl-data", "fonts", "ttf", "DejaVuSans.ttf"
+        )
+        candidate_paths.append(mpl_font)
+    except Exception:
+        pass
+
+    candidate_paths += [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/nix/store/*/share/fonts/truetype/DejaVuSans.ttf",
     ]
-    import glob
+
     for path in candidate_paths:
-        if "*" in path:
-            matches = glob.glob(path)
-            if matches:
-                try:
-                    return ImageFont.truetype(matches[0], size)
-                except Exception:
-                    continue
-        elif os.path.exists(path):
+        if os.path.exists(path):
             try:
                 return ImageFont.truetype(path, size)
             except Exception:
                 continue
+
     logger.warning("No TrueType font with Cyrillic support found, falling back to default bitmap font")
     return ImageFont.load_default()
 
