@@ -3,8 +3,8 @@ import os
 import asyncio
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
-from telegram import Update, LabeledPrice
-from telegram.ext import Application, CommandHandler, MessageHandler, PreCheckoutQueryHandler, filters, ContextTypes
+from telegram import Update, LabeledPrice, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, PreCheckoutQueryHandler, CallbackQueryHandler, filters, ContextTypes
 
 # Import our custom database module
 import database
@@ -87,6 +87,15 @@ def create_card(name, number, message=""):
     buf.seek(0)
     return buf
 
+def _main_actions_keyboard():
+    """Inline keyboard with one-tap buttons for all paid actions, so users
+    don't need to type slash commands manually."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⭐ Level Up (150 ⭐)", callback_data="levelup")],
+        [InlineKeyboardButton("👑 Become King (150 ⭐)", callback_data="king")],
+        [InlineKeyboardButton("🏆 View Leaderboard", callback_data="leaderboard")],
+    ])
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the user registration process sequentially and processes referral codes."""
     context.user_data.clear()
@@ -123,10 +132,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⭐ Avatar Level: {existing_user['level']}\n"
             f"👥 Friends invited: {existing_user['referral_count']}\n"
             f"👑 King Status: {'Active' if existing_user['is_vip'] else 'Inactive'}\n\n"
-            f"🔄 Want to upgrade your profile?\n"
-            f"/levelup — Upgrade Avatar Level (150 ⭐, +points)\n"
-            f"/king — Claim 'King of the Hill' crown (150 ⭐, +50 points)\n"
-            f"/leaderboard — See the Top 10"
+            f"🔄 Want to upgrade your profile? Tap a button below:",
+            reply_markup=_main_actions_keyboard()
         )
         return
 
@@ -181,15 +188,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Write your message or type skip"
     )
 
-async def levelup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles taps on inline keyboard buttons — routes to the same logic
+    as the matching slash commands, so users never need to type commands."""
+    query = update.callback_query
+    await query.answer()  # acknowledge the tap so Telegram stops the loading spinner
+
+    if query.data == "levelup":
+        await levelup_command(update, context, from_callback=True)
+    elif query.data == "king":
+        await king_command(update, context, from_callback=True)
+    elif query.data == "leaderboard":
+        await leaderboard(update, context, from_callback=True)
+
+async def levelup_command(update: Update, context: ContextTypes.DEFAULT_TYPE, from_callback: bool = False):
     """Sends an invoice for a repeat 'Level Up' purchase (150 Stars)."""
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
     existing_user = await database.get_user_by_id(user_id)
     if not existing_user:
-        await update.message.reply_text("You need to add your name to the Wall first! Type /start to begin.")
+        text = "You need to add your name to the Wall first! Type /start to begin."
+        if from_callback:
+            await context.bot.send_message(chat_id=chat_id, text=text)
+        else:
+            await update.message.reply_text(text)
         return
 
-    await update.message.reply_invoice(
+    await context.bot.send_invoice(
+        chat_id=chat_id,
         title="Level Up Your Avatar",
         description="Upgrade your avatar level and earn bonus points",
         payload=f"levelup:{user_id}",
@@ -199,18 +225,24 @@ async def levelup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def king_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def king_command(update: Update, context: ContextTypes.DEFAULT_TYPE, from_callback: bool = False):
     """Sends an invoice for claiming the 'King of the Hill' crown (150 Stars)."""
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
     existing_user = await database.get_user_by_id(user_id)
     if not existing_user:
-        await update.message.reply_text("You need to add your name to the Wall first! Type /start to begin.")
+        text = "You need to add your name to the Wall first! Type /start to begin."
+        if from_callback:
+            await context.bot.send_message(chat_id=chat_id, text=text)
+        else:
+            await update.message.reply_text(text)
         return
 
     current_king = await database.get_current_king()
     king_note = f"\n\n👑 Current King: {current_king['name']}" if current_king else "\n\n👑 The throne is empty!"
 
-    await update.message.reply_invoice(
+    await context.bot.send_invoice(
+        chat_id=chat_id,
         title="King of the Hill",
         description=f"Claim the crown and become the new King!{king_note}",
         payload=f"king:{user_id}",
@@ -237,7 +269,8 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"⭐ Avatar Level Up!\n\n"
             f"📈 New Level: {result['level']}\n"
             f"🏆 Points earned: +{result['points_awarded']}\n\n"
-            f"Next upgrade will be worth even more — keep climbing!"
+            f"Next upgrade will be worth even more — keep climbing!",
+            reply_markup=_main_actions_keyboard()
         )
         return
 
@@ -249,7 +282,8 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(
             f"👑 You are the new King of the Hill!\n\n"
             f"🏆 Points earned: +50\n"
-            f"✨ VIP status is now active on your profile.{dethrone_note}"
+            f"✨ VIP status is now active on your profile.{dethrone_note}",
+            reply_markup=_main_actions_keyboard()
         )
         return
 
@@ -306,7 +340,8 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     f"✅ Name: {name}\n"
                     f"🔢 Number: #{placement_id:,}\n\n"
                     f"🏆 Share your referral link to earn +50 points (and +500 at 10 friends!):\n{ref_link}"
-                )
+                ),
+                reply_markup=_main_actions_keyboard()
             )
         except Exception as e:
             logger.error(f"Card asset compilation failure scenario: {e}", exc_info=True)
@@ -314,10 +349,11 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"🎉 You are on the Wall!\n\n"
                 f"✅ Name: {name}\n"
                 f"🔢 Number: #{placement_id:,}\n\n"
-                f"🏆 Share your referral link:\n{ref_link}"
+                f"🏆 Share your referral link:\n{ref_link}",
+                reply_markup=_main_actions_keyboard()
             )
 
-async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE, from_callback: bool = False):
     """Displays the real Top-10 leaderboard and total stats from the database."""
     total_count = await database.get_total_participants_count()
     top10 = await database.get_top_leaderboard(limit=10)
@@ -334,7 +370,11 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += "No one on the wall yet — be the first!"
 
     text += "\n\nInvite friends using your link to climb the ranks!"
-    await update.message.reply_text(text)
+
+    if from_callback:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+    else:
+        await update.message.reply_text(text)
 
 async def main():
     app = Application.builder().token(BOT_TOKEN).build()
@@ -343,6 +383,7 @@ async def main():
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(CommandHandler("levelup", levelup_command))
     app.add_handler(CommandHandler("king", king_command))
+    app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
