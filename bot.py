@@ -91,6 +91,7 @@ def _main_actions_keyboard():
     """Inline keyboard with one-tap buttons for all paid actions, so users
     don't need to type slash commands manually."""
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("👤 My Profile", callback_data="profile")],
         [InlineKeyboardButton("⭐ Level Up (150 ⭐)", callback_data="levelup")],
         [InlineKeyboardButton("👑 Become King (150 ⭐)", callback_data="king")],
         [InlineKeyboardButton("🏆 View Leaderboard", callback_data="leaderboard")],
@@ -194,12 +195,49 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()  # acknowledge the tap so Telegram stops the loading spinner
 
-    if query.data == "levelup":
+    if query.data == "profile":
+        await profile_command(update, context, from_callback=True)
+    elif query.data == "levelup":
         await levelup_command(update, context, from_callback=True)
     elif query.data == "king":
         await king_command(update, context, from_callback=True)
     elif query.data == "leaderboard":
         await leaderboard(update, context, from_callback=True)
+
+async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE, from_callback: bool = False):
+    """Displays the user's personal stats on demand: points, level, wall number,
+    rank on the global leaderboard, referrals, and King/VIP status."""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    existing_user = await database.get_user_by_id(user_id)
+
+    if not existing_user:
+        text = "You're not on the Wall yet! Type /start to add your name."
+        if from_callback:
+            await context.bot.send_message(chat_id=chat_id, text=text)
+        else:
+            await update.message.reply_text(text)
+        return
+
+    rank = await database.get_user_rank(user_id)
+    rank_line = f"📊 Leaderboard rank: #{rank:,}\n" if rank else ""
+
+    text = (
+        f"👤 Your Profile\n\n"
+        f"🪪 Name: {existing_user['name']}\n"
+        f"🔢 Wall number: #{existing_user['id']:,}\n"
+        f"🏆 Points: {existing_user['points']}\n"
+        f"⭐ Avatar Level: {existing_user['level']}\n"
+        f"{rank_line}"
+        f"👥 Friends invited: {existing_user['referral_count']}\n"
+        f"👑 King Status: {'Active' if existing_user['is_vip'] else 'Inactive'}"
+    )
+
+    if from_callback:
+        await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=_main_actions_keyboard())
+    else:
+        await update.message.reply_text(text, reply_markup=_main_actions_keyboard())
+
 
 async def levelup_command(update: Update, context: ContextTypes.DEFAULT_TYPE, from_callback: bool = False):
     """Sends an invoice for a repeat 'Level Up' purchase (150 Stars)."""
@@ -380,6 +418,7 @@ async def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(CommandHandler("levelup", levelup_command))
     app.add_handler(CommandHandler("king", king_command))
