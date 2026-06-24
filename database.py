@@ -203,6 +203,30 @@ async def get_total_participants_count():
         await conn.close()
 
 
+async def get_user_rank(telegram_user_id: int):
+    """
+    Returns the user's current 1-based rank across ALL participants, ordered the
+    same way as the public leaderboard (points DESC, then earliest registration first).
+    Returns None if the user isn't found.
+    """
+    conn = await get_db_connection()
+    try:
+        rank = await conn.fetchval(
+            """
+            SELECT rank FROM (
+                SELECT telegram_user_id,
+                       RANK() OVER (ORDER BY points DESC, created_at ASC) AS rank
+                FROM names
+            ) ranked
+            WHERE telegram_user_id = $1
+            """,
+            telegram_user_id
+        )
+        return rank
+    finally:
+        await conn.close()
+
+
 async def get_top_leaderboard(limit: int = 10):
     """Returns the top N participants ordered by points, for the /leaderboard command."""
     conn = await get_db_connection()
