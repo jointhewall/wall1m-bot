@@ -170,7 +170,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description=f"Add '{name}' to the Wall forever",
             payload=payload,
             currency="XTR",
-            prices=[LabeledPrice("One spot on the Wall", 1)],
+            prices=[LabeledPrice("One spot on the Wall", 150)],
             provider_token="",
         )
         return
@@ -258,7 +258,7 @@ async def levelup_command(update: Update, context: ContextTypes.DEFAULT_TYPE, fr
         description="Upgrade your avatar level and earn bonus points",
         payload=f"levelup:{user_id}",
         currency="XTR",
-        prices=[LabeledPrice("Avatar Level Up", 1)],
+        prices=[LabeledPrice("Avatar Level Up", 150)],
         provider_token="",
     )
 
@@ -285,7 +285,7 @@ async def king_command(update: Update, context: ContextTypes.DEFAULT_TYPE, from_
         description=f"Claim the crown and become the new King!{king_note}",
         payload=f"king:{user_id}",
         currency="XTR",
-        prices=[LabeledPrice("King of the Hill Crown", 1)],
+        prices=[LabeledPrice("King of the Hill Crown", 150)],
         provider_token="",
     )
 
