@@ -91,6 +91,7 @@ def _main_actions_keyboard():
     """Inline keyboard with one-tap buttons for all paid actions, so users
     don't need to type slash commands manually."""
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌐 View the Wall", url="https://wall1m.com")],
         [InlineKeyboardButton("👤 My Profile", callback_data="profile")],
         [InlineKeyboardButton("⭐ Level Up (150 ⭐)", callback_data="levelup")],
         [InlineKeyboardButton("👑 Become King (150 ⭐)", callback_data="king")],
