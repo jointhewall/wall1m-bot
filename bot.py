@@ -144,7 +144,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🌍 One name. Forever.\n\n"
         "💫 Price: 150 Stars (~$2)\n"
         "🏆 Earn points, invite friends, win rewards!\n\n"
-        "Step 1: Just type your name below 👇"
+        "Step 1: Just type your name below 👇",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🌐 See the Wall first", url="https://wall1m.com")]
+        ])
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
