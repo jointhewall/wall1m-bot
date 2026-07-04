@@ -142,7 +142,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Welcome to Wall of a Million Names!\n\n"
         "🌍 One name. Forever.\n\n"
-        "💫 Price: 1 Star (launch special!)\n"
+        "💫 First 100 spots: 1 Star (then 150 ⭐)\n"
         "🏆 Earn points, invite friends, win rewards!\n\n"
         "Step 1: Just type your name below 👇",
         reply_markup=InlineKeyboardMarkup([
