@@ -142,7 +142,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Welcome to Wall of a Million Names!\n\n"
         "🌍 One name. Forever.\n\n"
-        "💫 Price: 150 Stars (~$2)\n"
+        "💫 Price: 1 Star (launch special!)\n"
         "🏆 Earn points, invite friends, win rewards!\n\n"
         "Step 1: Just type your name below 👇",
         reply_markup=InlineKeyboardMarkup([
@@ -174,7 +174,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description=f"Add '{name}' to the Wall forever",
             payload=payload,
             currency="XTR",
-            prices=[LabeledPrice("One spot on the Wall", 150)],
+            prices=[LabeledPrice("One spot on the Wall", 1)],
             provider_token="",
         )
         return
