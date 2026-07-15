@@ -375,7 +375,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         lang = (update.effective_user.language_code or 'en').lower()
         is_ru = lang.startswith('ru')
 
-        avatar_url = f"https://api.dicebear.com/7.x/bottts/png?seed={user_id}"
+        avatar_url = None
 
         placement_id = await database.create_new_participant(
             telegram_user_id=user_id,
