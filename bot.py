@@ -102,7 +102,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the user registration process sequentially and processes referral codes."""
     context.user_data.clear()
     user_id = update.effective_user.id
-    logger.info(f"--- START COMMAND TRIGGERED BY USER {user_id} ---")
+    lang = (update.effective_user.language_code or 'en').lower()
+    is_ru = lang.startswith('ru')
+    logger.info(f"--- START COMMAND TRIGGERED BY USER {user_id} (lang: {lang}) ---")
 
     # Extract referral payload from command arguments
     args = context.args
@@ -122,56 +124,82 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if existing_user:
-        # Daily check-in: +1 point, once per calendar day
         checked_in = await database.try_daily_checkin(user_id)
-        checkin_line = "🎁 Daily check-in: +1 point!\n\n" if checked_in else ""
 
-        await update.message.reply_text(
-            f"👋 Welcome back, {existing_user['name']}!\n\n"
-            f"{checkin_line}"
-            f"📊 Your Stats:\n"
-            f"🏆 Points: {existing_user['points']}\n"
-            f"⭐ Avatar Level: {existing_user['level']}\n"
-            f"👥 Friends invited: {existing_user['referral_count']}\n"
-            f"👑 King Status: {'Active' if existing_user['is_vip'] else 'Inactive'}\n\n"
-            f"🔄 Want to upgrade your profile? Tap a button below:",
-            reply_markup=_main_actions_keyboard()
-        )
+        if is_ru:
+            checkin_line = "🎁 Ежедневный чек-ин: +1 очко!\n\n" if checked_in else ""
+            text = (
+                f"👋 С возвращением, {existing_user['name']}!\n\n"
+                f"{checkin_line}"
+                f"📊 Твоя статистика:\n"
+                f"🏆 Очки: {existing_user['points']}\n"
+                f"⭐ Уровень аватара: {existing_user['level']}\n"
+                f"👥 Приглашено друзей: {existing_user['referral_count']}\n"
+                f"👑 Статус короля: {'Активен' if existing_user['is_vip'] else 'Неактивен'}\n\n"
+                f"🔄 Хочешь прокачать профиль? Выбери действие:"
+            )
+        else:
+            checkin_line = "🎁 Daily check-in: +1 point!\n\n" if checked_in else ""
+            text = (
+                f"👋 Welcome back, {existing_user['name']}!\n\n"
+                f"{checkin_line}"
+                f"📊 Your Stats:\n"
+                f"🏆 Points: {existing_user['points']}\n"
+                f"⭐ Avatar Level: {existing_user['level']}\n"
+                f"👥 Friends invited: {existing_user['referral_count']}\n"
+                f"👑 King Status: {'Active' if existing_user['is_vip'] else 'Inactive'}\n\n"
+                f"🔄 Want to upgrade your profile? Tap a button below:"
+            )
+
+        await update.message.reply_text(text, reply_markup=_main_actions_keyboard())
         return
 
-    await update.message.reply_text(
-        "👋 Welcome to Wall of a Million Names!\n\n"
-        "🌍 One name. Forever.\n\n"
-        "💫 First 100 spots: 1 Star (then 150 ⭐)\n"
-        "🏆 Earn points, invite friends, win rewards!\n\n"
-        "Step 1: Just type your name below 👇",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🌐 See the Wall first", url="https://wall1m.com")]
-        ])
-    )
+    if is_ru:
+        await update.message.reply_text(
+            "👋 Добро пожаловать на Wall of a Million Names!\n\n"
+            "🌍 Одно имя. Навсегда.\n\n"
+            "💫 Первые 100 мест: 1 звезда (потом 150 ⭐)\n"
+            "🏆 Зарабатывай очки, приглашай друзей, побеждай!\n\n"
+            "Шаг 1: Просто напиши своё имя 👇",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🌐 Посмотреть стену", url="https://wall1m.com")]
+            ])
+        )
+    else:
+        await update.message.reply_text(
+            "👋 Welcome to Wall of a Million Names!\n\n"
+            "🌍 One name. Forever.\n\n"
+            "💫 First 100 spots: 1 Star (then 150 ⭐)\n"
+            "🏆 Earn points, invite friends, win rewards!\n\n"
+            "Step 1: Just type your name below 👇",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🌐 See the Wall first", url="https://wall1m.com")]
+            ])
+        )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processes sequential message steps one-by-one."""
     text = update.message.text.strip()
     user_id = update.effective_user.id
+    lang = (update.effective_user.language_code or 'en').lower()
+    is_ru = lang.startswith('ru')
 
     # Step 2: Waiting for the optional message input
     if context.user_data.get("waiting_message"):
-        message = text if text.lower() != "skip" else ""
+        message = text if text.lower() not in ("skip", "пропустить") else ""
         name = context.user_data.get("name", "")
         invited_by = context.user_data.get("invited_by")
 
         context.user_data["message"] = message
         context.user_data["waiting_message"] = False
 
-        # Build dynamic billing system structure payload for standard slot purchase
         payload = f"buy_slot:{user_id}:name:{name}:msg:{message}"
         if invited_by:
             payload += f":ref:{invited_by}"
 
         await update.message.reply_invoice(
             title="Wall of a Million Names",
-            description=f"Add '{name}' to the Wall forever",
+            description=f"Добавить '{name}' на Стену навсегда" if is_ru else f"Add '{name}' to the Wall forever",
             payload=payload,
             currency="XTR",
             prices=[LabeledPrice("One spot on the Wall", 1)],
@@ -181,17 +209,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Step 1: Validating and capturing the name
     if len(text) < 2:
-        await update.message.reply_text("Please enter a valid name (at least 2 characters)")
+        if is_ru:
+            await update.message.reply_text("Пожалуйста, введи имя (минимум 2 символа)")
+        else:
+            await update.message.reply_text("Please enter a valid name (at least 2 characters)")
         return
 
     context.user_data["name"] = text
     context.user_data["waiting_message"] = True
 
-    await update.message.reply_text(
-        f"✅ Name saved: {text}\n\n"
-        f"Step 2: Add a message to the Wall? (optional)\n"
-        f"Write your message or type skip"
-    )
+    if is_ru:
+        await update.message.reply_text(
+            f"✅ Имя сохранено: {text}\n\n"
+            f"Шаг 2: Добавить послание на Стену? (необязательно)\n"
+            f"Напиши своё послание или отправь пропустить"
+        )
+    else:
+        await update.message.reply_text(
+            f"✅ Name saved: {text}\n\n"
+            f"Step 2: Add a message to the Wall? (optional)\n"
+            f"Write your message or type skip"
+        )
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles taps on inline keyboard buttons — routes to the same logic
@@ -334,10 +372,11 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         name = parts[3]
         message = parts[5]
         invited_by = int(parts[7]) if len(parts) > 6 else None
+        lang = (update.effective_user.language_code or 'en').lower()
+        is_ru = lang.startswith('ru')
 
         avatar_url = f"https://api.dicebear.com/7.x/bottts/png?seed={user_id}"
 
-        # Insert entry into database registry reference
         placement_id = await database.create_new_participant(
             telegram_user_id=user_id,
             name=name,
@@ -348,8 +387,6 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         ref_link = f"https://t.me/wall1mnames_bot?start={user_id}"
 
-        # Apply rewards to the upstream system referrer user (+50 per referral,
-        # plus a one-time +500 milestone bonus at 10 referrals)
         if invited_by:
             referral_result = await database.register_referral(
                 telegram_user_id=invited_by,
@@ -359,39 +396,60 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             if referral_result["milestone_hit"]:
                 try:
-                    await context.bot.send_message(
-                        chat_id=invited_by,
-                        text=(
+                    if is_ru:
+                        milestone_text = (
+                            f"🎉 Milestone достигнут!\n\n"
+                            f"Ты пригласил 10 друзей на Стену!\n"
+                            f"🏆 Бонус: +500 очков!"
+                        )
+                    else:
+                        milestone_text = (
                             f"🎉 Milestone reached!\n\n"
                             f"You've invited 10 friends to the Wall!\n"
                             f"🏆 Bonus: +500 points awarded!"
                         )
-                    )
+                    await context.bot.send_message(chat_id=invited_by, text=milestone_text)
                 except Exception as notify_err:
                     logger.warning(f"Could not notify referrer {invited_by} about milestone: {notify_err}")
 
-        # ВАЖНО: никакого parse_mode и звёздочек вокруг текста с пользовательскими данными —
-        # имя или сообщение пользователя может содержать символы *, _, [, ], которые ломают
-        # Markdown-парсер Telegram и вызывают ошибку "can't find end of the entity"
+        if is_ru:
+            caption_text = (
+                f"🎉 Ты на Стене!\n\n"
+                f"✅ Имя: {name}\n"
+                f"🔢 Номер: #{placement_id:,}\n\n"
+                f"🏆 Поделись своей реферальной ссылкой и получи +50 очков (и +500 за 10 друзей!):\n{ref_link}"
+            )
+            fallback_text = (
+                f"🎉 Ты на Стене!\n\n"
+                f"✅ Имя: {name}\n"
+                f"🔢 Номер: #{placement_id:,}\n\n"
+                f"🏆 Твоя реферальная ссылка:\n{ref_link}"
+            )
+        else:
+            caption_text = (
+                f"🎉 You are on the Wall!\n\n"
+                f"✅ Name: {name}\n"
+                f"🔢 Number: #{placement_id:,}\n\n"
+                f"🏆 Share your referral link to earn +50 points (and +500 at 10 friends!):\n{ref_link}"
+            )
+            fallback_text = (
+                f"🎉 You are on the Wall!\n\n"
+                f"✅ Name: {name}\n"
+                f"🔢 Number: #{placement_id:,}\n\n"
+                f"🏆 Share your referral link:\n{ref_link}"
+            )
+
         try:
             card = create_card(name, placement_id, message)
             await update.message.reply_photo(
                 photo=card,
-                caption=(
-                    f"🎉 You are on the Wall!\n\n"
-                    f"✅ Name: {name}\n"
-                    f"🔢 Number: #{placement_id:,}\n\n"
-                    f"🏆 Share your referral link to earn +50 points (and +500 at 10 friends!):\n{ref_link}"
-                ),
+                caption=caption_text,
                 reply_markup=_main_actions_keyboard()
             )
         except Exception as e:
             logger.error(f"Card asset compilation failure scenario: {e}", exc_info=True)
             await update.message.reply_text(
-                f"🎉 You are on the Wall!\n\n"
-                f"✅ Name: {name}\n"
-                f"🔢 Number: #{placement_id:,}\n\n"
-                f"🏆 Share your referral link:\n{ref_link}",
+                fallback_text,
                 reply_markup=_main_actions_keyboard()
             )
 
