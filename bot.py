@@ -158,7 +158,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "👋 Добро пожаловать на Wall of a Million Names!\n\n"
             "🌍 Одно имя. Навсегда.\n\n"
-            "💫 Первые 100 мест: 1 звезда (потом 150 ⭐)\n"
+            "🆓 Первые 1000 мест — бесплатно!\n"
             "🏆 Зарабатывай очки, приглашай друзей, побеждай!\n\n"
             "Шаг 1: Просто напиши своё имя 👇",
             reply_markup=InlineKeyboardMarkup([
@@ -169,7 +169,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "👋 Welcome to Wall of a Million Names!\n\n"
             "🌍 One name. Forever.\n\n"
-            "💫 First 100 spots: 1 Star (then 150 ⭐)\n"
+            "🆓 First 1000 spots — completely free!\n"
             "🏆 Earn points, invite friends, win rewards!\n\n"
             "Step 1: Just type your name below 👇",
             reply_markup=InlineKeyboardMarkup([
@@ -193,18 +193,80 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["message"] = message
         context.user_data["waiting_message"] = False
 
-        payload = f"buy_slot:{user_id}:name:{name}:msg:{message}"
-        if invited_by:
-            payload += f":ref:{invited_by}"
+        # Проверяем количество участников — до 1000 регистрация бесплатная
+        total_count = await database.get_total_participants_count()
 
-        await update.message.reply_invoice(
-            title="Wall of a Million Names",
-            description=f"Добавить '{name}' на Стену навсегда" if is_ru else f"Add '{name}' to the Wall forever",
-            payload=payload,
-            currency="XTR",
-            prices=[LabeledPrice("One spot on the Wall", 1)],
-            provider_token="",
-        )
+        if total_count < 1000:
+            # Бесплатная регистрация — сразу создаём запись без оплаты
+            placement_id = await database.create_new_participant(
+                telegram_user_id=user_id,
+                name=name,
+                message=message,
+                avatar_url=None,
+                invited_by=invited_by
+            )
+
+            if invited_by:
+                referral_result = await database.register_referral(
+                    telegram_user_id=invited_by,
+                    referral_points=50,
+                    milestone_bonus=500,
+                    milestone_count=10
+                )
+                if referral_result["milestone_hit"]:
+                    try:
+                        milestone_text = (
+                            "🎉 Milestone достигнут!\n\nТы пригласил 10 друзей на Стену!\n🏆 Бонус: +500 очков!"
+                            if is_ru else
+                            "🎉 Milestone reached!\n\nYou've invited 10 friends to the Wall!\n🏆 Bonus: +500 points awarded!"
+                        )
+                        await context.bot.send_message(chat_id=invited_by, text=milestone_text)
+                    except Exception as notify_err:
+                        logger.warning(f"Could not notify referrer {invited_by} about milestone: {notify_err}")
+
+            ref_link = f"https://t.me/wall1mnames_bot?start={user_id}"
+            if is_ru:
+                caption_text = (
+                    f"🎉 Ты на Стене!\n\n"
+                    f"✅ Имя: {name}\n"
+                    f"🔢 Номер: #{placement_id:,}\n"
+                    f"🆓 Бесплатное место (первые 1000)\n\n"
+                    f"🏆 Поделись реферальной ссылкой и получи +50 очков:\n{ref_link}"
+                )
+            else:
+                caption_text = (
+                    f"🎉 You are on the Wall!\n\n"
+                    f"✅ Name: {name}\n"
+                    f"🔢 Number: #{placement_id:,}\n"
+                    f"🆓 Free spot (first 1000)\n\n"
+                    f"🏆 Share your referral link to earn +50 points:\n{ref_link}"
+                )
+
+            try:
+                card = create_card(name, placement_id, message)
+                await update.message.reply_photo(
+                    photo=card,
+                    caption=caption_text,
+                    reply_markup=_main_actions_keyboard()
+                )
+            except Exception as e:
+                logger.error(f"Card generation failed: {e}", exc_info=True)
+                await update.message.reply_text(caption_text, reply_markup=_main_actions_keyboard())
+
+        else:
+            # Платная регистрация — 150⭐
+            payload = f"buy_slot:{user_id}:name:{name}:msg:{message}"
+            if invited_by:
+                payload += f":ref:{invited_by}"
+
+            await update.message.reply_invoice(
+                title="Wall of a Million Names",
+                description=f"Добавить '{name}' на Стену навсегда" if is_ru else f"Add '{name}' to the Wall forever",
+                payload=payload,
+                currency="XTR",
+                prices=[LabeledPrice("One spot on the Wall", 150)],
+                provider_token="",
+            )
         return
 
     # Step 1: Validating and capturing the name
