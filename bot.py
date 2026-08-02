@@ -1,6 +1,7 @@
 import logging
 import os
 import asyncio
+import base64
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from telegram import Update, LabeledPrice, InlineKeyboardButton, InlineKeyboardMarkup
@@ -87,6 +88,31 @@ def create_card(name, number, message=""):
     buf.seek(0)
     return buf
 
+def _decode_wall_payload(raw: str):
+    """Разбирает deep-link, пришедший с сайта: ga_<client_id>-<b64name> или n-<b64name>.
+    Возвращает (client_id, name) — оба поля могут быть None, если их нет или payload битый."""
+    client_id = None
+    name = None
+
+    def _b64_decode(chunk: str):
+        try:
+            padded = chunk + "=" * (-len(chunk) % 4)
+            return base64.urlsafe_b64decode(padded).decode("utf-8", errors="ignore").strip()
+        except Exception:
+            return None
+
+    if raw.startswith("ga_"):
+        rest = raw[3:]
+        client_part, sep, name_part = rest.partition("-")
+        if sep:
+            client_id = client_part.replace("_", ".")
+            name = _b64_decode(name_part)
+    elif raw.startswith("n-"):
+        name = _b64_decode(raw[2:])
+
+    return client_id, name
+
+
 def _main_actions_keyboard():
     """Inline keyboard with one-tap buttons for all paid actions, so users
     don't need to type slash commands manually."""
@@ -108,11 +134,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Extract referral payload from command arguments
     args = context.args
+    prefilled_name = None
     if args and args[0].isdigit():
         referrer_id = int(args[0])
         if referrer_id != user_id:
             context.user_data["invited_by"] = referrer_id
             logger.info(f"Referrer detected: {referrer_id}")
+    elif args and (args[0].startswith("ga_") or args[0].startswith("n-")):
+        # Пришёл с сайта: ga_<client_id>-<b64name> или n-<b64name>
+        ga_client_id, prefilled_name = _decode_wall_payload(args[0])
+        if ga_client_id:
+            context.user_data["ga_client_id"] = ga_client_id
+            logger.info(f"GA client_id captured from site deep-link: {ga_client_id}")
+        if prefilled_name:
+            logger.info(f"Pre-filled name captured from site: {prefilled_name}")
 
     try:
         logger.info("Attempting to connect to Supabase database via database.py...")
@@ -152,6 +187,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         await update.message.reply_text(text, reply_markup=_main_actions_keyboard())
+        return
+
+    if prefilled_name and len(prefilled_name) >= 2:
+        # Имя уже введено на сайте — не переспрашиваем, сразу подтверждаем и идём к шагу 2
+        context.user_data["name"] = prefilled_name
+        context.user_data["waiting_message"] = True
+
+        if is_ru:
+            await update.message.reply_text(
+                f"👋 Добро пожаловать на Wall of a Million Names!\n\n"
+                f"✅ Имя получено с сайта: {prefilled_name}\n\n"
+                f"Шаг 2: Добавить послание на Стену? (необязательно)\n"
+                f"Напиши своё послание или отправь пропустить"
+            )
+        else:
+            await update.message.reply_text(
+                f"👋 Welcome to Wall of a Million Names!\n\n"
+                f"✅ Name received from the site: {prefilled_name}\n\n"
+                f"Step 2: Add a message to the Wall? (optional)\n"
+                f"Write your message or type skip"
+            )
         return
 
     if is_ru:
