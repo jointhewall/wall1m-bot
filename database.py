@@ -238,3 +238,35 @@ async def get_top_leaderboard(limit: int = 10):
         return [dict(r) for r in rows]
     finally:
         await conn.close()
+
+
+async def get_pending_registration(code: str):
+    """
+    Looks up a pending registration created by the site (name + message,
+    stored under a short random code). Returns {'name':..., 'message':...}
+    or None if the code doesn't exist / was already used / expired.
+    """
+    conn = await get_db_connection()
+    try:
+        row = await conn.fetchrow(
+            "SELECT name, message FROM pending_registrations WHERE code = $1",
+            code
+        )
+        return dict(row) if row else None
+    finally:
+        await conn.close()
+
+
+async def delete_pending_registration(code: str):
+    """
+    Deletes a pending registration right after it's been consumed (confirmed
+    in the bot), so a double-tap on the confirm button can't create two entries.
+    """
+    conn = await get_db_connection()
+    try:
+        await conn.execute(
+            "DELETE FROM pending_registrations WHERE code = $1",
+            code
+        )
+    finally:
+        await conn.close()
